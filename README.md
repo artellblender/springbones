@@ -9,6 +9,9 @@ User support is not granted for it considering this early state, it may be buggy
 
 - Install the .py file in Blender 2.8
 - In Pose Mode, go to the "Spring Bones" panel in the Bone tools section on the right.
+
+![alt text](https://github.com/artellblender/springbones/blob/master/1.png)
+
 - Click "Enable Bone" on a bone parented to another bone and click "Start" to enable the effect.
 - You can adjust the "Bouncy" and "Speed" parameters
 - When moving the parent bone, the child will move dynamically with bouncy motion
