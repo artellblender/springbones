@@ -7,7 +7,7 @@ User support is not granted for it considering this early state, it may be buggy
 
 ## Installation
 
-- Install the .py file in Blender 2.8
+- Download and install the spring_bones.py file in Blender 2.8
 - In Pose Mode, go to the "Spring Bones" panel in the Bone tools section on the right.
 
 ![alt text](https://github.com/artellblender/springbones/blob/master/1.png)
