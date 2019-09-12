@@ -1,5 +1,5 @@
 # Spring Bones
-Blender addon to add spring/bouncy dynamic effect to bones
+Blender addon to add spring/bouncy dynamic effect to bones.
 
 It's currently in a very early state, alpha-proof of concept.
 The effect applies on the bone position only, no rotation.
