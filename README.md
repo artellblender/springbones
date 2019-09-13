@@ -15,5 +15,6 @@ User support is not granted for it considering this early state, it may be buggy
 - Click "Enable Bone" on a bone parented to another bone and click "Start" to enable the effect.
 - You can adjust the "Bouncy" and "Speed" parameters
 - When moving the parent bone, the child will move dynamically with bouncy motion
+- Press the Escape key to stop
 
 
