@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Spring Bones",
     "author": "Artell",
-    "version": (0, 2),
+    "version": (0, 3),
     "blender": (2, 80, 0),
     "location": "Properties > Bones",
     "description": "Add a spring dynamic effect to a single/multiple bones",    
@@ -13,21 +13,29 @@ from bpy.app.handlers import persistent
 from mathutils import *
 import math
 
-print('\n Start Spring Bones Addon... \n')
 
+print('\n Start Spring Bones Addon... \n')
 
 
 def set_active_object(object_name):
      bpy.context.view_layer.objects.active = bpy.data.objects[object_name]
      bpy.data.objects[object_name].select_set(state=1)
 
+     
 def get_pose_bone(name):  
     try:
         return bpy.context.object.pose.bones[name]
     except:
         return None
-
-def spring_bone():
+        
+        
+def spring_bone_frame_mode(foo):   
+    if bpy.context.scene.global_spring_frame == True:
+        spring_bone(foo)
+    
+    
+def spring_bone(foo):
+    #print("running...")
     scene = bpy.context.scene
     #point spring
     for bone in scene.spring_bones:        
@@ -47,7 +55,6 @@ def spring_bone():
         bone.speed += dir
         bone.speed *= pose_bone.stiffness
         emp_head.location += bone.speed * pose_bone.damp
-             
        
     return None
     
@@ -144,11 +151,12 @@ def update_bone(self, context):
 
   
 def end_spring_bone(context, self):
-    if self.timer_handler:   
-        wm = context.window_manager
-        wm.event_timer_remove(self.timer_handler)
+    if context.scene.global_spring:
+        if self.timer_handler:   
+            wm = context.window_manager
+            wm.event_timer_remove(self.timer_handler)
 
-    context.scene.global_spring = False
+        context.scene.global_spring = False
     
     for item in context.scene.spring_bones:
         
@@ -167,10 +175,10 @@ def end_spring_bone(context, self):
         if emp2:        
             bpy.data.objects.remove(emp2)
     
-    print("--End modal--")
+    print("--End--")
     
 class SB_OT_spring_modal(bpy.types.Operator):
-    """Spring Bones"""
+    """Spring Bones, interactive mode"""
     
     bl_idname = "sb.spring_bone"
     bl_label = "spring_bone" 
@@ -179,12 +187,12 @@ class SB_OT_spring_modal(bpy.types.Operator):
         self.timer_handler = None
 
     def modal(self, context, event):        
-        if event.type == "ESC":         
+        if event.type == "ESC" or context.scene.global_spring == False:         
             end_spring_bone(context, self)
             return {'FINISHED'}  
             
         if event.type == 'TIMER':       
-            spring_bone()
+            spring_bone(context)
         
         return {'PASS_THROUGH'}
     
@@ -210,7 +218,25 @@ class SB_OT_spring_modal(bpy.types.Operator):
             end_spring_bone(context, self)            
             return {'FINISHED'}  
             
+            
+class SB_OT_spring(bpy.types.Operator):
+    """Spring Bones, animation mode. Support baking."""
+    
+    bl_idname = "sb.spring_bone_frame"
+    bl_label = "spring_bone_frame" 
 
+   
+    def execute(self, context):        
+        if context.scene.global_spring_frame == False:           
+            context.scene.global_spring_frame = True
+            update_bone(self, context)
+ 
+        else:
+            end_spring_bone(context, self)
+            context.scene.global_spring_frame = False  
+            
+        return {'FINISHED'}  
+            
             
 ###########  UI PANEL  ###################
 
@@ -238,9 +264,20 @@ class SB_PT_ui(bpy.types.Panel):
         col = layout.column(align=True)
         #col.prop(scene, 'global_spring', text="Enable spring")
         if context.scene.global_spring == False:
-            col.operator(SB_OT_spring_modal.bl_idname, text="Start", icon='PLAY')
+            col.operator(SB_OT_spring_modal.bl_idname, text="Start", icon='PLAY')           
         if context.scene.global_spring == True:
-            col.operator(SB_OT_spring_modal.bl_idname, text="Stop", icon='PAUSE')
+            col.operator(SB_OT_spring_modal.bl_idname, text="Stop", icon='PAUSE')          
+      
+        col.enabled = not context.scene.global_spring_frame
+      
+        col = layout.column(align=True)
+        if context.scene.global_spring_frame == False:          
+            col.operator(SB_OT_spring.bl_idname, text="Start - Animation Mode", icon='PLAY')
+        if context.scene.global_spring_frame == True:           
+            col.operator(SB_OT_spring.bl_idname, text="Start - Animation Mode", icon='PAUSE')
+            
+        col.enabled = not context.scene.global_spring
+        
         col = layout.column(align=True)
         
         col.label(text='Bone Parameters:')
@@ -248,6 +285,7 @@ class SB_PT_ui(bpy.types.Panel):
         col.prop(active_bone, 'bone_rot', text="Rotation")
         col.prop(active_bone, 'stiffness', text="Bouncy")
         col.prop(active_bone,'damp', text="Speed")
+        
         
         
 #### REGISTER ############# 
@@ -262,7 +300,7 @@ class bones_collec(bpy.types.PropertyGroup):
     matrix_offset = Matrix()
     initial_matrix = Matrix()
     
-classes = (SB_PT_ui, bones_collec, SB_OT_spring_modal)
+classes = (SB_PT_ui, bones_collec, SB_OT_spring_modal, SB_OT_spring)
         
 def register():
     from bpy.utils import register_class
@@ -270,14 +308,16 @@ def register():
     for cls in classes:
         register_class(cls)   
         
-    #bpy.app.handlers.depsgraph_update_post.append(spring)
+    bpy.app.handlers.frame_change_post.append(spring_bone_frame_mode)
     
-    bpy.types.Scene.spring_bones = bpy.props.CollectionProperty(type=bones_collec)  
-    bpy.types.Scene.global_spring = bpy.props.BoolProperty(name="Enable spring", default = False)#, update=update_global_spring)     
+    bpy.types.Scene.spring_bones = bpy.props.CollectionProperty(type=bones_collec)       
+    bpy.types.Scene.global_spring = bpy.props.BoolProperty(name="Enable spring", default = False)#, update=update_global_spring)
+    bpy.types.Scene.global_spring_frame = bpy.props.BoolProperty(name="Enable Spring", description="Enable Spring on frame change only", default = False)
     bpy.types.PoseBone.bone_spring = bpy.props.BoolProperty(name="Enabled", default=False, description="Enable this bone for spring")
     bpy.types.PoseBone.stiffness = bpy.props.FloatProperty(name="Stiffness", default=0.5, min = 0.01, max = 1.0)
     bpy.types.PoseBone.damp = bpy.props.FloatProperty(name="Damp", default=0.7, min=0.0, max = 10.0)    
     bpy.types.PoseBone.bone_rot = bpy.props.BoolProperty(name="Rotation", default=False, description="Enable spring rotation instead of location")
+    
     
 def unregister():
     from bpy.utils import unregister_class
@@ -285,9 +325,10 @@ def unregister():
     for cls in reversed(classes):
         unregister_class(cls)   
     
-    #bpy.app.handlers.depsgraph_update_post.remove(spring)  
+    bpy.app.handlers.frame_change_post.remove(spring_bone_frame_mode)  
     
     del bpy.types.Scene.global_spring
+    del bpy.types.Scene.global_spring_frame
     del bpy.types.Scene.spring_bones    
     del bpy.types.PoseBone.stiffness
     del bpy.types.PoseBone.damp
