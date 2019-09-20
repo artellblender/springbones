@@ -3,7 +3,7 @@ Blender addon to add spring/bouncy dynamic effect to bones.
 
 Warning, it's currently in a very early state, alpha-proof of concept.
 The effect applies to the bone position and rotation in option.
-It's not production ready, it's mainly a toy to play with. Baking does not seem supported out of the box.
+It's not production ready, it's mainly a toy to play with.
 User support is not granted for it considering this early state, it may be buggy but still fun to play with :)
 
 ## Installation
