@@ -13,7 +13,8 @@ User support is not granted for it considering this early state, it may be buggy
 
 ![alt text](https://github.com/artellblender/springbones/blob/master/1.png)
 
-- Click "Enable Bone" on a bone parented to another bone and click "Start" to enable the effect.
+- Click "Enable Bone" on a bone parented to another bone
+- Click "Start" to enable the effect interactively, or "Start - Animation Mode" to enable it on frame change only (support baking)
 - You can adjust the "Bouncy" and "Speed" parameters
 - When moving the parent bone, the child will move dynamically with bouncy motion
 - Press the Escape key to stop
