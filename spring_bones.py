@@ -28,7 +28,7 @@ def get_pose_bone(name):
     except:
         return None
         
-        
+@persistent        
 def spring_bone_frame_mode(foo):   
     if bpy.context.scene.global_spring_frame == True:
         spring_bone(foo)
