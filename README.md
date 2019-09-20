@@ -17,6 +17,5 @@ User support is not granted for it considering this early state, it may be buggy
 - Click "Start" to enable the effect interactively, or "Start - Animation Mode" to enable it on frame change only (support baking)
 - You can adjust the "Bouncy" and "Speed" parameters
 - When moving the parent bone, the child will move dynamically with bouncy motion
-- Press the Escape key to stop
 
 
