@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Spring Bones",
     "author": "Artell",
-    "version": (0, 4),
+    "version": (0, 5),
     "blender": (2, 80, 0),
     "location": "Properties > Bones",
     "description": "Add a spring dynamic effect to a single/multiple bones",    
@@ -152,14 +152,14 @@ def update_bone(self, context):
   
 def end_spring_bone(context, self):
     if context.scene.global_spring:
-        if self.timer_handler:   
-            wm = context.window_manager
-            wm.event_timer_remove(self.timer_handler)
-
+        #print("GOING TO CLOSE TIMER...")        
+        wm = context.window_manager
+        wm.event_timer_remove(self.timer_handler)
+        #print("CLOSE TIMER")
+      
         context.scene.global_spring = False
     
-    for item in context.scene.spring_bones:
-        
+    for item in context.scene.spring_bones:        
         active_bone = bpy.context.active_object.pose.bones.get(item.name)
         if active_bone == None:
             continue
@@ -177,6 +177,7 @@ def end_spring_bone(context, self):
     
     print("--End--")
     
+    
 class SB_OT_spring_modal(bpy.types.Operator):
     """Spring Bones, interactive mode"""
     
@@ -185,21 +186,24 @@ class SB_OT_spring_modal(bpy.types.Operator):
     
     def __init__(self):
         self.timer_handler = None
-
-    def modal(self, context, event):        
+     
+    def modal(self, context, event):  
+        #print("self.timer_handler =", self.timer_handler)
         if event.type == "ESC" or context.scene.global_spring == False:         
-            end_spring_bone(context, self)
+            self.cancel(context)
+            #print("ESCAPE")
             return {'FINISHED'}  
             
         if event.type == 'TIMER':       
             spring_bone(context)
         
+        
         return {'PASS_THROUGH'}
-    
+
         
     def execute(self, context):     
         args = (self, context)  
-        
+        #print("self.timer_handler =", self.timer_handler)
         # enable spring bone
         if context.scene.global_spring == False:  
             wm = context.window_manager
@@ -213,10 +217,41 @@ class SB_OT_spring_modal(bpy.types.Operator):
             return {'RUNNING_MODAL'}    
         
         # disable spring selection
+        
         else:
             print("--End modal--")
-            end_spring_bone(context, self)            
+            #self.cancel(context)
+            context.scene.global_spring = False
             return {'FINISHED'}  
+           
+            
+    def cancel(self, context):
+        #if context.scene.global_spring:
+        #print("GOING TO CLOSE TIMER...")
+        
+        wm = context.window_manager
+        wm.event_timer_remove(self.timer_handler)
+        #print("CLOSED TIMER")
+          
+        context.scene.global_spring = False
+        
+        for item in context.scene.spring_bones:        
+            active_bone = bpy.context.active_object.pose.bones.get(item.name)
+            if active_bone == None:
+                continue
+                
+            cns = active_bone.constraints.get('spring')
+            if cns:            
+                active_bone.constraints.remove(cns)  
+                   
+            emp1 = bpy.data.objects.get(active_bone.name + '_spring')
+            emp2 = bpy.data.objects.get(active_bone.name + '_spring_tail')
+            if emp1:     
+                bpy.data.objects.remove(emp1)        
+            if emp2:        
+                bpy.data.objects.remove(emp2)
+        
+        print("--End--")
             
             
 class SB_OT_spring(bpy.types.Operator):
