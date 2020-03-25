@@ -1,6 +1,8 @@
 # Spring Bones
 Blender addon to add spring/bouncy dynamic effect to bones.
 
+![alt text](https://github.com/artellblender/springbones/blob/master/bbones_chain.gif)
+
 Warning, it's currently in a very early state, alpha-proof of concept.
 The effect applies to the bone position and rotation in option.
 It's not production ready, it's mainly a toy to play with.
