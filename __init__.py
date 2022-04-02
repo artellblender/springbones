@@ -864,7 +864,7 @@ def unregister():
     del bpy.types.Object.sb_object_collider
     del bpy.types.Object.sb_collider_dist
     del bpy.types.Object.sb_collider_force
-    del bpy.types.Object.sb_collide
+    del bpy.types.PoseBone.sb_collide
     del bpy.types.PoseBone.sb_global_influence
 
 
