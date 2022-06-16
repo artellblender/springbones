@@ -831,6 +831,7 @@ class SB_PT_ui(bpy.types.Panel):
             # col.label(text="Lock axis when colliding:")
             col.prop(active_bone, 'sb_lock_axis', text="Lock axis:")
             col.enabled = not active_bone.sb_bone_collider
+            col.enabled = active_bone.sb_bone_spring
             
             layout.separator()
             col = layout.column(align=True)
