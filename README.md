@@ -20,7 +20,7 @@ User support is not granted for it considering this early state, it may be buggy
 
 ### Installation Process
 
-1. Download the latest <b>[release](https://github.com/artell/springbones/releases/)</b>
+1. Download the latest <b>[release](https://github.com/artellblender/springbones/releases/)</b>
 2. If you downloaded the zip file.
 3. Open Blender.
 4. Go to File -> User Preferences -> Addons.
