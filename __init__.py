@@ -1,10 +1,22 @@
+# IDEAS
+# V Update all select
+# V Add Preset system
+# V Simplified code update props > use dynamic function > saves code
+# - Add all empties to collections and set to hide, cleaner scene
+# - Resume Play modes after editting is they are playing
+
+# Fiex error unchecking addon
+# - Wrong prop name sb_collider
+
 bl_info = {
     "name": "Spring Bones",
     "author": "Artell",
-    "version": (0, 9),
+    "version": (0, 9, 1),
     "blender": (2, 80, 0),
     "location": "Properties > Bones",
-    "description": "Add a spring dynamic effect to a single/multiple bones",    
+    "description": "Add a spring dynamic effect to a single/multiple bones",
+    "wiki_url": "https://github.com/artell/springbones",
+	# "tracker_url": "https://github.com/artell/springbones",
     "category": "Animation"}
 
 
@@ -15,6 +27,10 @@ import math
 import numpy
 from numpy import dot
 from math import sqrt
+from bl_operators.presets import AddPresetBase
+from bl_ui.utils import PresetPanel
+from bpy.types import Panel, Menu, Operator
+
 #from mathutils import Vector
 
                                           
@@ -462,10 +478,29 @@ def update_bone(self, context):
                 empty.hide_select = True
                 empty.name = item.name + '_spring'
                 """
+                # Gotinot object mode > needed to move items to collections
+                # bpy.ops.object.mode_set(mode='OBJECT')
+                # bpy.data.objects[armature.name].select_set(False)
+
                 o = bpy.data.objects.new(item.name+'_spring', None )
 
                 # due to the new mechanism of "collection"
                 bpy.context.scene.collection.objects.link(o)
+
+                # # Slows down process
+                # # Add them in their own _Springbones collection
+                # if "_Springbones" in scene.collection.children:
+                #     # o = bpy.data.collections['_Springbones'].objects.link(bpy.data.objects[anmx.onion_object])
+                #     bpy.data.collections['_Springbones'].objects.link(bpy.data.objects[o.name])
+                
+                # # Add new collection _SpringBones
+                # if not "_Springbones" in scene.collection.children:
+                #     # due to the new mechanism of "collection"
+                #     bpy.context.scene.collection.objects.link(o)
+
+                #     bpy.data.objects[o.name].select_set(True)
+                #     bpy.ops.object.move_to_collection(collection_index=0, is_new=True, new_collection_name="_Springbones")
+                #     bpy.data.collections['_Springbones'].hide_render = True
 
                 # empty_draw was replaced by empty_display
                 o.empty_display_size = empty_radius
@@ -473,12 +508,34 @@ def update_bone(self, context):
                 o.location = bone_tail if rotation_enabled else bone_head                
                 o.hide_set(True)
                 o.hide_select = True
-                
+            
+                # bpy.ops.object.mode_set(mode='POSE')
+                # bpy.data.objects[armature.name].select_set(True)
+
             if not bpy.data.objects.get(item.name + '_spring_tail'):
+                # bpy.ops.object.mode_set(mode='OBJECT')
+                # bpy.data.objects[armature.name].select_set(False)
+
                 empty = bpy.data.objects.new(item.name+'_spring_tail', None )
                 
-                # due to the new mechanism of "collection"
+                # # due to the new mechanism of "collection"
                 bpy.context.scene.collection.objects.link(empty)
+
+                # # Slows down process
+                # # Add them in their own _Springbones collection
+                # if "_Springbones" in scene.collection.children:
+                #     # o = bpy.data.collections['_Springbones'].objects.link(bpy.data.objects[anmx.onion_object])
+                #     bpy.data.collections['_Springbones'].objects.link(bpy.data.objects[empty.name])
+                
+                # # Add new collection _SpringBones
+                # if not "_Springbones" in scene.collection.children:
+                #     # due to the new mechanism of "collection"
+                #     bpy.context.scene.collection.objects.link(empty)
+                    
+                #     bpy.data.objects[o.name].select_set(True)
+                #     bpy.ops.object.move_to_collection(collection_index=0, is_new=True, new_collection_name="_Springbones")
+                #     bpy.data.collections['_Springbones'].hide_render = True
+
 
                 # empty_draw was replaced by empty_display
                 empty.empty_display_size = empty_radius
@@ -508,6 +565,9 @@ def update_bone(self, context):
                 empty.parent_type = 'BONE'
                 empty.parent_bone = parent_name
                 empty.matrix_world = mat
+
+                # bpy.ops.object.mode_set(mode='POSE')
+                # bpy.data.objects[armature.name].select_set(True)
                 
             #create constraints
             if pbone['sb_bone_spring'] == True:
@@ -537,7 +597,7 @@ def update_bone(self, context):
              
     #set_active_object(armature.name)
     #bpy.ops.object.mode_set(mode='POSE')
-    
+
     print("Updated in", round(time.time()-time_start, 1), "seconds.")    
   
 def end_spring_bone(context, self):
@@ -565,7 +625,10 @@ def end_spring_bone(context, self):
             bpy.data.objects.remove(emp1)        
         if emp2:        
             bpy.data.objects.remove(emp2)
-    
+        coll = bpy.data.collections.get('_SpringBones')
+        if coll:
+            bpy.data.collections.remove(coll)
+
     print("--End--")
     
     
@@ -645,6 +708,7 @@ class SB_OT_spring_modal(bpy.types.Operator):
         print("--End--")
             
             
+
 class SB_OT_spring(bpy.types.Operator):
     """Spring Bones, animation mode. Support baking."""
     
@@ -695,12 +759,17 @@ class SB_PT_ui(bpy.types.Panel):
     bl_label = "Spring Bones"    
     
     @classmethod
-    
     def poll(cls, context):
         return context.active_object
-       
+    
+    def draw_header_preset(self, _context):
+        SB_PT_SpringBonePresets.draw_panel_header(self.layout)
+
     def draw(self, context):    
         layout = self.layout
+        # New BL UI design method
+        layout.use_property_split = True
+        layout.use_property_decorate = False
         object = context.object
         
         scene = context.scene
@@ -709,47 +778,73 @@ class SB_PT_ui(bpy.types.Panel):
         if context.mode == "POSE" and bpy.context.active_pose_bone:
             active_bone = bpy.context.active_pose_bone
             #col.label(text='Scene Parameters:')
-            col = layout.column(align=True)
+            col.operator(SB_OT_NLAbake.bl_idname, text="Bake for Render", icon='NLA')           
+            col.separator()
+
+            
             #col.prop(scene, 'sb_global_spring', text="Enable spring")
             if context.scene.sb_global_spring == False:
-                col.operator(SB_OT_spring_modal.bl_idname, text="Start - Interactive Mode", icon='PLAY')           
+                col.operator(SB_OT_spring_modal.bl_idname, text="Interactive Mode", icon='PLAY')           
             if context.scene.sb_global_spring == True:
                 col.operator(SB_OT_spring_modal.bl_idname, text="Stop", icon='PAUSE')          
-          
+                
             col.enabled = not context.scene.sb_global_spring_frame
           
             col = layout.column(align=True)
             if context.scene.sb_global_spring_frame == False:          
-                col.operator(SB_OT_spring.bl_idname, text="Start - Animation Mode", icon='PLAY')
+                colrow = col.row(align=True)
+                colrow.prop(scene,'sb_global_spring_frame_continous', text="", icon='FILE_REFRESH')           
+                colrow.operator(SB_OT_spring.bl_idname, text="Animation Mode", icon='PLAY')
             if context.scene.sb_global_spring_frame == True:           
-                col.operator(SB_OT_spring.bl_idname, text="Stop", icon='PAUSE')
+                colrow = col.row(align=True)
+                colrow.prop(scene,'sb_global_spring_frame_continous', text="", icon='FILE_REFRESH')           
+                colrow.operator(SB_OT_spring.bl_idname, text="Stop", icon='PAUSE')
                 
             col.enabled = not context.scene.sb_global_spring
             
+            # Added into header
+            # layout.separator()
+            # # Save / load presets
+            # row = layout.row(align=True)
+            # row.alignment = 'RIGHT'
+            # row.label(text="SpringBone Presets")
+            # row.menu("SB_MT_SpringBonePresets",text=bpy.types.SB_MT_SpringBonePresets.bl_label)
+            # row.operator(SB_OT_AddSpringBonePreset.bl_idname, text="", icon="ADD")
+            # row.operator(SB_OT_AddSpringBonePreset.bl_idname, text="", icon="REMOVE").remove_active = True
+
+            layout.separator()
             col = layout.column(align=True)
-            
-            col.label(text='Bone Parameters:')
-            col.prop(active_bone, 'sb_bone_spring', text="Spring")        
+            row = col.row(align=True)
+            row = row.row()
+            row.alignment = 'RIGHT'
+            row.label(text='Bone Parameters:')
+            row.prop(active_bone, 'sb_bone_spring', text="Spring")        
             col.prop(active_bone, 'sb_bone_rot', text="Rotation")
+            col = layout.column(align=True)
             col.prop(active_bone, 'sb_stiffness', text="Bouncy")
             col.prop(active_bone,'sb_damp', text="Speed")
             col.prop(active_bone,'sb_gravity', text="Gravity")
             col.prop(active_bone,'sb_global_influence', text="Influence")
+
+            col.separator()
             col.prop(active_bone,'sb_collide', text="Is Colliding")
-            col.label(text="Lock axis when colliding:")
-            col.prop(active_bone, 'sb_lock_axis', text="")
+            # col.label(text="Lock axis when colliding:")
+            col.prop(active_bone, 'sb_lock_axis', text="Lock axis:")
             col.enabled = not active_bone.sb_bone_collider
+            col.enabled = active_bone.sb_bone_spring
             
             layout.separator()
             col = layout.column(align=True)
             col.prop(active_bone, 'sb_bone_collider', text="Collider")
+            col.enabled = not active_bone.sb_bone_spring
+            col = layout.column(align=True)
             col.prop(active_bone, 'sb_collider_dist', text="Collider Distance")
             col.prop(active_bone, 'sb_collider_force', text="Collider Force")       
-            col.enabled = not active_bone.sb_bone_spring
+            col.enabled = active_bone.sb_bone_collider == True
             
-            layout.separator()
-            layout.prop(scene, "sb_show_colliders")
-            col = layout.column(align=True)
+            col.separator()
+            col.prop(scene, "sb_show_colliders")
+            # col = layout.column(align=True)
             
             if scene.sb_show_colliders:
                 for pbone in bpy.context.active_object.pose.bones:
@@ -759,7 +854,8 @@ class SB_PT_ui(bpy.types.Panel):
                             row.label(text=pbone.name)
                             r = row.operator(SB_OT_select_bone.bl_idname, text="Select")
                             r.bone_name = pbone.name
-        
+        else:
+            layout.label(text="Editable in Pose mode", icon='INFO')
       
  
 class SB_PT_object_ui(bpy.types.Panel):
@@ -769,7 +865,6 @@ class SB_PT_object_ui(bpy.types.Panel):
     bl_label = "Spring Bones"    
     
     @classmethod
-    
     def poll(cls, context):
         if context.active_object:
             return context.active_object.type == "MESH"
@@ -787,7 +882,170 @@ class SB_PT_object_ui(bpy.types.Panel):
             col.prop(context.active_object, 'sb_object_collider', text="Collider")
             col.prop(context.active_object, 'sb_collider_dist', text="Collider Distance")
             col.prop(context.active_object, 'sb_collider_force', text="Collider Force")       
+
+        else:
+            layout.label(text="Editable in Edit mode", icon='INFO')
+
+
+#### Hany Operator Settings ############# 
+class SB_OT_NLAbake(bpy.types.Operator):
+    """NLA Bake for SpringBones to show in renders."""
+    bl_idname = "sb.nla_bake"
+    bl_label = "NLA Bake" 
             
+    @classmethod
+    def poll(cls, context):
+        return context.scene.sb_global_spring_frame
+
+    def execute(self, context):     
+        obj = bpy.context.object
+        # if obj.mode == 'POSE':
+        #     bake_type = 'POSE'
+            
+        #     #select all active bones in layers if not only selected
+        #     if obj.onlyselected == False:
+        #         for i in range(1, obj.track_list_index+1):
+        #             for fcu in obj.animation_data.nla_tracks[obj.track_list_index].strips[0].action.fcurves:
+        #                 bone = fcu.data_path.split('"')[1]
+        #                 obj.data.bones[bone].select = True
+                        
+        #     #store the keyframe numbers necessery for smart bake
+        #     if obj.smartbake == True:
+        #         bone_keys = smart_bake(obj, context)
+        # else:
+        #     bake_type = 'OBJECT'
+        #     if obj.smartbake == True:
+        #         keyframes = smart_bake(obj, context)
+        
+        bpy.ops.pose.select_all(action='SELECT')
+        # Name org action > reuse for the new action
+        orgActionName = obj.animation_data.action.name
+        bpy.ops.nla.bake(frame_start = 0, frame_end = bpy.context.scene.frame_end, only_selected = True, visual_keying=True, clear_constraints=True, use_current_action=False) #, bake_types={bake_type})
+        obj.animation_data.action.name = orgActionName + '_BAKED'
+        # Turn OFF Global Soring Frame
+        context.scene.sb_global_spring_frame = False
+
+        return {'FINISHED'}  
+
+
+#### SAVE PRESETS ############# 
+
+class SB_PT_SpringBonePresets(PresetPanel, Panel):
+    bl_label = "SpringBone Presets"
+    preset_subdir = "springbones"
+    preset_operator = "script.execute_preset"
+    preset_add_operator = "sb.add_springbone_preset"
+
+class SB_MT_SpringBonePresets(Menu):
+    bl_label = 'SpringBone Presets'
+    preset_subdir = 'springbones'
+    preset_operator = 'script.execute_preset'
+    draw = Menu.draw_preset
+
+class SB_OT_AddSpringBonePreset(AddPresetBase, Operator):
+    bl_idname = 'sb.add_springbone_preset'
+    bl_label = 'Save SpringBone preset'
+    preset_menu = 'SB_MT_SpringBonePresets'
+
+    # Common variable used for all preset values
+    preset_defines = [
+        'b = bpy.context.active_pose_bone',
+        # 'a = bpy.context.active_pose_bone',
+        # 'for b in bpy.context.selected_pose_bones:\n',
+        # '    if not b == a:\n',
+    ]
+
+    preset_values = [
+        'b.sb_bone_spring',
+        'b.sb_bone_rot',
+        'b.sb_stiffness',
+        'b.sb_damp',
+        'b.sb_gravity',
+        'b.sb_global_influence',
+        'b.sb_collide',
+        'b.sb_lock_axis',
+        'b.sb_bone_collider',
+        'b.sb_collider_dist',
+        'b.sb_collider_force',
+        # '        b.sb_bone_spring = a.sb_bone_spring',
+        # '        b.sb_bone_rot = a.sb_bone_rot',
+        # '        b.sb_stiffness = a.sb_stiffness',
+        # '        b.sb_damp = a.sb_damp',
+        # '        b.sb_gravity = a.sb_gravity',
+    ]
+
+    # Directory to store the presets
+    preset_subdir = 'springbones'
+
+#### UPDATE PROPS ############# 
+def stop_spring_bones(context):
+    restart_global_spring = False
+    restart_global_spring_frame = False
+    if context.scene.sb_global_spring:
+        bpy.ops.sb.spring_bone()
+        restart_global_spring = True
+    if context.scene.sb_global_spring_frame:
+        bpy.ops.sb.spring_bone_frame()
+        restart_global_spring_frame = True
+    return(restart_global_spring, restart_global_spring_frame)
+
+def update_props(context,bone_list, active_pose_bone, prop):
+    glob_spring, glob_spring_fr = stop_spring_bones(context)
+    a = active_pose_bone
+    for b in bone_list:
+        if not b == a:
+            b[prop] = a[prop]
+    # Slows down system > guess Handler is stopped correctly 
+    # if glob_spring:
+    #     bpy.ops.sb.spring_bone()
+    if glob_spring_fr and context.scene.sb_global_spring_frame_continous:
+        bpy.ops.sb.spring_bone_frame()
+
+def update_spring(self,context):
+    c = context
+    update_props(c, c.selected_pose_bones, c.active_pose_bone, 'sb_bone_spring')
+
+def update_rotation(self,context):
+    c = context
+    update_props(c, c.selected_pose_bones, c.active_pose_bone, 'sb_bone_rot')
+
+def update_stiffness(self,context):
+    c = context
+    update_props(c, c.selected_pose_bones, c.active_pose_bone, 'sb_stiffness')
+    
+def update_damp(self,context):
+    c = context
+    update_props(c, c.selected_pose_bones, c.active_pose_bone, 'sb_damp')
+
+def update_gravity(self,context):
+    c = context
+    update_props(c, c.selected_pose_bones, c.active_pose_bone, 'sb_gravity')
+
+def update_global_influence(self,context):
+    c = context
+    update_props(c, c.selected_pose_bones, c.active_pose_bone, 'sb_global_influence')
+
+def update_collide(self,context):
+    c = context
+    update_props(c, c.selected_pose_bones, c.active_pose_bone, 'sb_collide')
+
+def update_lock_axis(self,context):
+    c = context
+    update_props(c, c.selected_pose_bones, c.active_pose_bone, 'sb_lock_axis')
+
+def update_bone_collider(self,context):
+    c = context
+    update_props(c, c.selected_pose_bones, c.active_pose_bone, 'sb_bone_collider')
+            
+def update_bone_collider_dist(self,context):
+    c = context
+    update_props(c, c.selected_pose_bones, c.active_pose_bone, 'sb_collider_dist')
+
+def update_bone_collider_force(self,context):
+    c = context
+    update_props(c, c.selected_pose_bones, c.active_pose_bone, 'sb_collider_force')
+
+
 #### REGISTER ############# 
 
 class bones_collec(bpy.types.PropertyGroup):
@@ -807,8 +1065,7 @@ class bones_collec(bpy.types.PropertyGroup):
 class mesh_collec(bpy.types.PropertyGroup):
     test : bpy.props.StringProperty(default="")
     
-    
-classes = (SB_PT_ui, SB_PT_object_ui, bones_collec, mesh_collec, SB_OT_spring_modal, SB_OT_spring, SB_OT_select_bone)
+classes = (SB_PT_ui, SB_PT_object_ui, bones_collec, mesh_collec, SB_OT_spring_modal, SB_OT_spring, SB_OT_select_bone,SB_OT_NLAbake, SB_PT_SpringBonePresets, SB_MT_SpringBonePresets, SB_OT_AddSpringBonePreset)
         
 def register():
     from bpy.utils import register_class
@@ -822,21 +1079,24 @@ def register():
     bpy.types.Scene.sb_mesh_colliders = bpy.props.CollectionProperty(type=mesh_collec)       
     bpy.types.Scene.sb_global_spring = bpy.props.BoolProperty(name="Enable spring", default = False)#, update=update_global_spring)
     bpy.types.Scene.sb_global_spring_frame = bpy.props.BoolProperty(name="Enable Spring", description="Enable Spring on frame change only", default = False)
-    bpy.types.Scene.sb_show_colliders = bpy.props.BoolProperty(name="Show Colliders", description="Show active colliders names", default = False)
-    bpy.types.PoseBone.sb_bone_spring = bpy.props.BoolProperty(name="Enabled", default=False, description="Enable spring effect on this bone")
-    bpy.types.PoseBone.sb_bone_collider = bpy.props.BoolProperty(name="Collider", default=False, description="Enable this bone as collider")
-    bpy.types.PoseBone.sb_collider_dist = bpy.props.FloatProperty(name="Collider Distance", default=0.5, description="Minimum distance to handle collision between the spring and collider bones")
-    bpy.types.PoseBone.sb_collider_force = bpy.props.FloatProperty(name="Collider Force", default=1.0, description="Amount of repulsion force when colliding")
-    bpy.types.PoseBone.sb_stiffness = bpy.props.FloatProperty(name="Stiffness", default=0.5, min = 0.01, max = 1.0, description="Bouncy/elasticity value, higher values lead to more bounciness")
-    bpy.types.PoseBone.sb_damp = bpy.props.FloatProperty(name="Damp", default=0.7, min=0.0, max = 10.0, description="Speed/damping force applied to the bone to go back to it initial position") 
-    bpy.types.PoseBone.sb_gravity = bpy.props.FloatProperty(name="Gravity", description="Additional vertical force to simulate gravity", default=0.0, min=-100.0, max = 100.0) 
-    bpy.types.PoseBone.sb_bone_rot = bpy.props.BoolProperty(name="Rotation", default=False, description="The spring effect will apply on the bone rotation instead of location")
-    bpy.types.PoseBone.sb_lock_axis = bpy.props.EnumProperty(items=(('NONE', 'None', ""), ('+X', '+X', ''), ('-X', '-X', ''), ('+Y', "+Y", ""), ('-Y', '-Y', ""), ('+Z', '+Z', ""), ('-Z', '-Z', '')), default="NONE")
-    bpy.types.Object.sb_object_collider = bpy.props.BoolProperty(name="Collider", default=False, description="Enable this bone as collider")
+    bpy.types.Scene.sb_global_spring_frame_continous = bpy.props.BoolProperty(name="Continous Update ", description="Continous to animation mode while edit are done. Normally we had to stop and start again after an edit.", default = True)
+    
+    bpy.types.PoseBone.sb_bone_spring = bpy.props.BoolProperty(name="Enabled", default=False, description="Enable spring effect on this bone", update=update_spring)
+    bpy.types.PoseBone.sb_bone_rot = bpy.props.BoolProperty(name="Rotation", default=False, description="The spring effect will apply on the bone rotation instead of location", update=update_rotation)
+    bpy.types.PoseBone.sb_stiffness = bpy.props.FloatProperty(name="Stiffness", default=0.5, min = 0.01, max = 1.0, description="Bouncy/elasticity value, higher values lead to more bounciness", update=update_stiffness)
+    bpy.types.PoseBone.sb_damp = bpy.props.FloatProperty(name="Damp", default=0.7, min=0.0, max = 10.0, description="Speed/damping force applied to the bone to go back to it initial position", update=update_damp)
+    bpy.types.PoseBone.sb_gravity = bpy.props.FloatProperty(name="Gravity", description="Additional vertical force to simulate gravity", default=0.0, min=-100.0, max = 100.0, update=update_gravity) 
+    bpy.types.PoseBone.sb_global_influence = bpy.props.FloatProperty(name="Influence", default = 1.0, min=0.0, max=1.0, description="Global influence of spring motion", update=update_global_influence)#, update=update_global_spring)
+    
+    bpy.types.PoseBone.sb_collide = bpy.props.BoolProperty(name="Colliding", default = True, description="The bone will collide with other colliders", update=update_collide)#, update=update_global_spring)
+    bpy.types.PoseBone.sb_lock_axis = bpy.props.EnumProperty(name="Lock Axis",items=(('NONE', 'None', ""), ('+X', '+X', ''), ('-X', '-X', ''), ('+Y', "+Y", ""), ('-Y', '-Y', ""), ('+Z', '+Z', ""), ('-Z', '-Z', '')), description="Locks Axis when colliding.", default="NONE", update=update_lock_axis)
+    bpy.types.Object.sb_object_collider = bpy.props.BoolProperty(name="Collider", default=False, description="Enable this bone as collider") #, update=update_object_collider)
     bpy.types.Object.sb_collider_dist = bpy.props.FloatProperty(name="Collider Distance", default=0.5, description="Minimum distance to handle collision between the spring and collider bones")
     bpy.types.Object.sb_collider_force = bpy.props.FloatProperty(name="Collider Force", default=1.0, description="Amount of repulsion force when colliding")
-    bpy.types.PoseBone.sb_collide = bpy.props.BoolProperty(name="Colliding", default = True, description="The bone will collide with other colliders")#, update=update_global_spring)
-    bpy.types.PoseBone.sb_global_influence = bpy.props.FloatProperty(name="Influence", default = 1.0, min=0.0, max=1.0, description="Global influence of spring motion")#, update=update_global_spring)
+    bpy.types.PoseBone.sb_bone_collider = bpy.props.BoolProperty(name="Collider", default=False, description="Enable this bone as collider", update=update_bone_collider)
+    bpy.types.PoseBone.sb_collider_dist = bpy.props.FloatProperty(name="Collider Distance", default=0.5, description="Minimum distance to handle collision between the spring and collider bones", update=update_bone_collider_dist)
+    bpy.types.PoseBone.sb_collider_force = bpy.props.FloatProperty(name="Collider Force", default=1.0, description="Amount of repulsion force when colliding", update=update_bone_collider_force)
+    bpy.types.Scene.sb_show_colliders = bpy.props.BoolProperty(name="Show Colliders", description="Show active colliders names", default = False)
     
     
 def unregister():
@@ -861,10 +1121,10 @@ def unregister():
     del bpy.types.PoseBone.sb_gravity
     del bpy.types.PoseBone.sb_bone_rot
     del bpy.types.PoseBone.sb_lock_axis
+    del bpy.types.PoseBone.sb_collide
     del bpy.types.Object.sb_object_collider
     del bpy.types.Object.sb_collider_dist
     del bpy.types.Object.sb_collider_force
-    del bpy.types.Object.sb_collide
     del bpy.types.PoseBone.sb_global_influence
     
     
