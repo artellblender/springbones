@@ -1,10 +1,10 @@
 bl_info = {
     "name": "Spring Bones",
     "author": "Artell",
-    "version": (0, 9),
+    "version": (1, 10, 10),
     "blender": (2, 80, 0),
     "location": "Properties > Bones",
-    "description": "Add a spring dynamic effect to a single/multiple bones",    
+    "description": "Add simple spring dynamic motion to bones",    
     "category": "Animation"}
 
 
@@ -15,12 +15,6 @@ import math
 import numpy
 from numpy import dot
 from math import sqrt
-#from mathutils import Vector
-
-                                          
-
-#print('\n Start Spring Bones Addon... \n')
-
 
 def set_active_object(object_name):
      bpy.context.view_layer.objects.active = bpy.data.objects[object_name]
@@ -43,25 +37,23 @@ def lerp_vec(vec_a, vec_b, t):
                              
     
 def spring_bone(foo):
-    #print("running...")
     scene = bpy.context.scene  
     deps = bpy.context.evaluated_depsgraph_get()    
   
     for bone in scene.sb_spring_bones: 
         # collider, skip
-        if bone.sb_bone_collider:
-            continue
+        if bone.sb_bone_collider: continue
+        
         armature = bpy.data.objects[bone.armature]
-        pose_bone = armature.pose.bones[bone.name]  
+        pose_bone = armature.pose.bones[bone.name]
+        
         # no influence, skip
-        if pose_bone.sb_global_influence == 0.0:
-            continue
+        if pose_bone.sb_global_influence == 0.0: continue
           
-        emp_tail = bpy.data.objects.get(bone.name + '_spring_tail')        
-        emp_head = bpy.data.objects.get(bone.name + '_spring')
+        emp_tail = bpy.data.objects.get(bone.name+'_spring_tail')        
+        emp_head = bpy.data.objects.get(bone.name+'_spring')
         
         if emp_tail == None or emp_head == None:
-            #print("no empties found, return")
             return
                        
         emp_tail_loc, rot, scale = emp_tail.matrix_world.decompose()
@@ -77,15 +69,16 @@ def spring_bone(foo):
         base_pos_dir += (emp_tail_loc - emp_head.location)
         
         # evaluate bones collision
-        if bone.sb_bone_colliding:
-           
+        if bone.sb_bone_colliding:           
             for bone_col in scene.sb_spring_bones:            
                 if bone_col.sb_bone_collider == False:
                     continue
-                #print("collider bone", bone_col.name)
+                if pose_bone.sb_include_only != "*":
+                    if bone_col.name not in pose_bone.sb_include_only:
+                        continue
+
                 pose_bone_col = armature.pose.bones[bone_col.name]   
-                sb_collider_dist = pose_bone_col.sb_collider_dist
-                #col_dir = (pose_bone.head - pose_bone_col.head)
+                sb_collider_dist = pose_bone_col.sb_collider_dist + pose_bone.sb_colliding_dist
                 pose_bone_center = (pose_bone.tail + pose_bone.head)*0.5
                 p = project_point_onto_line(pose_bone_col.head, pose_bone_col.tail, pose_bone_center)
                 col_dir = (pose_bone_center - p)
@@ -171,8 +164,12 @@ def spring_bone(foo):
         
         emp_head.location += bone.speed
         # global influence                  
-        emp_head.location = lerp_vec(emp_head.location, emp_tail_loc, pose_bone.sb_global_influence)     
-            
+        emp_head.location = lerp_vec(emp_head.location, emp_tail_loc, pose_bone.sb_global_influence) 
+        # clamp distance       
+        if pose_bone.sb_max_distance != 0.0:
+            if (emp_head.location - emp_tail_loc).magnitude > pose_bone.sb_max_distance:
+                emp_head.location = emp_tail_loc + (emp_head.location - emp_tail_loc).normalized() * pose_bone.sb_max_distance
+      
     return None
 
     
@@ -184,6 +181,7 @@ def project_point_onto_plane(q, p, n):
     
     n = n.normalized()
     return q - ((q-p).dot(n)) * n 
+    
     
 def project_point_onto_line(a, b, p):
     # project the point p onto the line a,b
@@ -211,9 +209,7 @@ def project_point_onto_tri(TRI, P):
     
     B = TRI[0, :]
     E0 = TRI[1, :] - B
-    # E0 = E0/sqrt(sum(E0.^2)); %normalize vector
     E1 = TRI[2, :] - B
-    # E1 = E1/sqrt(sum(E1.^2)); %normalize vector
     D = B - P
     a = dot(E0, E0)
     b = dot(E0, E1)
@@ -222,7 +218,6 @@ def project_point_onto_tri(TRI, P):
     e = dot(E1, D)
     f = dot(D, D)
 
-    #print "{0} {1} {2} ".format(B,E1,E0)
     det = a * c - b * b
     s = b * e - c * d
     t = b * d - a * e
@@ -382,15 +377,16 @@ def update_bone(self, context):
     scene = bpy.context.scene    
     armature = bpy.context.active_object  
     deps = bpy.context.evaluated_depsgraph_get()
+    
     #update collection
-        #delete all
+    #  delete all
     if len(scene.sb_spring_bones) > 0:
         i = len(scene.sb_spring_bones)
         while i >= 0:          
             scene.sb_spring_bones.remove(i)
             i -= 1
         
-        # mesh colliders
+    #   mesh colliders
     if len(scene.sb_mesh_colliders) > 0:
         i = len(scene.sb_mesh_colliders)
         while i >= 0:          
@@ -398,83 +394,46 @@ def update_bone(self, context):
             i -= 1
             
         
-    for pbone in armature.pose.bones:
-        # are the properties there?
-        if len(pbone.keys()) == 0:           
-            continue            
-        if not 'sb_bone_spring' in pbone.keys() and not 'sb_bone_collider' in pbone.keys():
-            continue
+    for pbone in armature.pose.bones:   
+        if pbone.sb_bone_spring == False and pbone.sb_bone_collider == False:
+            continue             
+
+        if pbone.sb_bone_spring == False:
+            # remove old spring constraints
+            spring_cns = pbone.constraints.get("spring")
+            if spring_cns:
+                pbone.constraints.remove(spring_cns)
+                
             
-        is_spring_bone = False
-        is_collider_bone = False
-        rotation_enabled =  False
-        is_colliding = True
+        item = bpy.context.scene.sb_spring_bones.add()
+        item.name = pbone.name    
+        bone_tail = armature.matrix_world @ pbone.tail 
+        bone_head = armature.matrix_world @ pbone.head 
+        item.last_loc = bone_head
+        item.armature = armature.name
+        parent_name = ''
+        if pbone.parent:
+            parent_name = pbone.parent.name          
         
-        if 'sb_bone_spring' in pbone.keys():
-            if pbone.get("sb_bone_spring") == False:
-                # remove old spring constraints
-                spring_cns = pbone.constraints.get("spring")
-                if spring_cns:
-                    pbone.constraints.remove(spring_cns)   
-                
-            else:
-                is_spring_bone = True
-                
-        if 'sb_bone_collider' in pbone.keys():        
-            is_collider_bone = pbone.get("sb_bone_collider")
-                
-        if 'sb_bone_rot' in pbone.keys():           
-            rotation_enabled = pbone.get("sb_bone_rot") 
-        if 'sb_collide' in pbone.keys():
-            is_colliding = pbone.get('sb_collide')
-            
-        #print("iterating on", pbone.name)
-        if is_spring_bone or is_collider_bone:
-            item = bpy.context.scene.sb_spring_bones.add()
-            item.name = pbone.name    
-            print("registering", pbone.name)
-            bone_tail = armature.matrix_world @ pbone.tail 
-            bone_head = armature.matrix_world @ pbone.head 
-            item.last_loc = bone_head
-            item.armature = armature.name
-            parent_name = ""
-            if pbone.parent:
-                parent_name = pbone.parent.name          
-            
-            item.sb_bone_rot = rotation_enabled
-            item.sb_bone_collider = is_collider_bone
-            item.sb_bone_colliding = is_colliding
+        item.sb_bone_rot = pbone.sb_bone_rot
+        item.sb_bone_collider = pbone.sb_bone_collider
+        item.sb_bone_colliding = pbone.sb_collide
        
         #create empty helpers
         empty_radius = 1
-        if is_spring_bone :
-            if not bpy.data.objects.get(item.name + '_spring'):
-                """
-                # adding empties using operators cost too much performance
-                bpy.ops.object.mode_set(mode='OBJECT')       
-                bpy.ops.object.select_all(action='DESELECT')
-                if rotation_enabled:
-                    bpy.ops.object.empty_add(type='PLAIN_AXES', radius = empty_radius, location=bone_tail, rotation=(0,0,0)) 
-                else:
-                    bpy.ops.object.empty_add(type='PLAIN_AXES', radius = empty_radius, location=bone_head, rotation=(0,0,0)) 
-                empty = bpy.context.active_object   
-                empty.hide_set(True)
-                empty.hide_select = True
-                empty.name = item.name + '_spring'
-                """
-                o = bpy.data.objects.new(item.name+'_spring', None )
-
-                # due to the new mechanism of "collection"
+        if pbone.sb_bone_spring :
+            if not bpy.data.objects.get(item.name+'_spring'):
+                o = bpy.data.objects.new(item.name+'_spring', None)
                 bpy.context.scene.collection.objects.link(o)
 
                 # empty_draw was replaced by empty_display
                 o.empty_display_size = empty_radius
                 o.empty_display_type = 'PLAIN_AXES'   
-                o.location = bone_tail if rotation_enabled else bone_head                
+                o.location = bone_tail if pbone.sb_bone_rot else bone_head                
                 o.hide_set(True)
                 o.hide_select = True
                 
-            if not bpy.data.objects.get(item.name + '_spring_tail'):
+            if not bpy.data.objects.get(item.name+'_spring_tail'):
                 empty = bpy.data.objects.new(item.name+'_spring_tail', None )
                 
                 # due to the new mechanism of "collection"
@@ -483,26 +442,14 @@ def update_bone(self, context):
                 # empty_draw was replaced by empty_display
                 empty.empty_display_size = empty_radius
                 empty.empty_display_type = 'PLAIN_AXES'   
-                #empty.location = bone_tail if rotation_enabled else bone_head
-                empty.matrix_world = Matrix.Translation(bone_tail if rotation_enabled else bone_head)
+                #empty.location = bone_tail if pbone.sb_bone_rot else bone_head
+                empty.matrix_world = Matrix.Translation(bone_tail if pbone.sb_bone_rot else bone_head)
                 # >>setting the matrix instead of location attribute to avoid the despgraph update
                 # for performance reasons
                 #deps.update()
                 empty.hide_set(True)
                 empty.hide_select = True
-                """
-                bpy.ops.object.mode_set(mode='OBJECT')        
-                bpy.ops.object.select_all(action='DESELECT')         
-                if rotation_enabled:
-                    bpy.ops.object.empty_add(type='PLAIN_AXES', radius = empty_radius, location=bone_tail, rotation=(0,0,0)) 
-                else:
-                    bpy.ops.object.empty_add(type='PLAIN_AXES', radius = empty_radius, location=bone_head, rotation=(0,0,0)) 
-                empty = bpy.context.active_object    
-                empty.hide_set(True)
-                empty.hide_select = True
-                                               
-                empty.name = item.name + '_spring_tail'   
-                """
+               
                 mat = empty.matrix_world.copy()                                  
                 empty.parent = armature
                 empty.parent_type = 'BONE'
@@ -510,7 +457,7 @@ def update_bone(self, context):
                 empty.matrix_world = mat
                 
             #create constraints
-            if pbone['sb_bone_spring'] == True:
+            if pbone.sb_bone_spring:
                 #set_active_object(armature.name)
                 #bpy.ops.object.mode_set(mode='POSE')
                 spring_cns = pbone.constraints.get("spring")
@@ -533,20 +480,14 @@ def update_bone(self, context):
                 item = scene.sb_mesh_colliders.add()
                 item.name = obj.name                   
                 break
-             
-             
-    #set_active_object(armature.name)
-    #bpy.ops.object.mode_set(mode='POSE')
     
-    print("Updated in", round(time.time()-time_start, 1), "seconds.")    
-  
+    print("Updated in", round(time.time()-time_start, 1), "seconds.")
+    
+
 def end_spring_bone(context, self):
-    if context.scene.sb_global_spring:
-        #print("GOING TO CLOSE TIMER...")        
+    if context.scene.sb_global_spring:      
         wm = context.window_manager
-        wm.event_timer_remove(self.timer_handler)
-        #print("CLOSE TIMER")
-      
+        wm.event_timer_remove(self.timer_handler)      
         context.scene.sb_global_spring = False
     
     for item in context.scene.sb_spring_bones:        
@@ -565,9 +506,7 @@ def end_spring_bone(context, self):
             bpy.data.objects.remove(emp1)        
         if emp2:        
             bpy.data.objects.remove(emp2)
-    
-    print("--End--")
-    
+        
     
 class SB_OT_spring_modal(bpy.types.Operator):
     """Spring Bones, interactive mode"""
@@ -575,54 +514,40 @@ class SB_OT_spring_modal(bpy.types.Operator):
     bl_idname = "sb.spring_bone"
     bl_label = "spring_bone" 
     
-    def __init__(self):
-        self.timer_handler = None
+    timer_handler = None
      
     def modal(self, context, event):  
-        #print("self.timer_handler =", self.timer_handler)
         if event.type == "ESC" or context.scene.sb_global_spring == False:         
             self.cancel(context)
-            #print("ESCAPE")
             return {'FINISHED'}  
             
         if event.type == 'TIMER':       
-            spring_bone(context)
-        
+            spring_bone(context)        
         
         return {'PASS_THROUGH'}
 
         
     def execute(self, context):     
         args = (self, context)  
-        #print("self.timer_handler =", self.timer_handler)
         # enable spring bone
         if context.scene.sb_global_spring == False:  
             wm = context.window_manager
             self.timer_handler = wm.event_timer_add(0.02, window=context.window)            
-            wm.modal_handler_add(self)
-            print("--Start modal--")
-            
+            wm.modal_handler_add(self)            
             context.scene.sb_global_spring = True
             update_bone(self, context)
             
             return {'RUNNING_MODAL'}    
-        
-        # disable spring selection
+
         
         else:
-            print("--End modal--")
-            #self.cancel(context)
             context.scene.sb_global_spring = False
             return {'FINISHED'}  
            
             
-    def cancel(self, context):
-        #if context.scene.sb_global_spring:
-        #print("GOING TO CLOSE TIMER...")
-        
+    def cancel(self, context):        
         wm = context.window_manager
         wm.event_timer_remove(self.timer_handler)
-        #print("CLOSED TIMER")
           
         context.scene.sb_global_spring = False
         
@@ -640,9 +565,7 @@ class SB_OT_spring_modal(bpy.types.Operator):
             if emp1:     
                 bpy.data.objects.remove(emp1)        
             if emp2:        
-                bpy.data.objects.remove(emp2)
-        
-        print("--End--")
+                bpy.data.objects.remove(emp2)       
             
             
 class SB_OT_spring(bpy.types.Operator):
@@ -661,7 +584,8 @@ class SB_OT_spring(bpy.types.Operator):
             end_spring_bone(context, self)
             context.scene.sb_global_spring_frame = False  
             
-        return {'FINISHED'}  
+        return {'FINISHED'}
+        
         
 class SB_OT_select_bone(bpy.types.Operator):
     """Select this bone"""
@@ -678,10 +602,6 @@ class SB_OT_select_bone(bpy.types.Operator):
         for i, l in enumerate(data_bone.layers):
             if l == True and bpy.context.active_object.data.layers[i] == False:
                 bpy.context.active_object.data.layers[i] = True
-                #print("enabled layer", i)
-            
-            
-        #get_pose_bone(self.bone_name).select = True
             
         return {'FINISHED'}  
             
@@ -729,24 +649,28 @@ class SB_PT_ui(bpy.types.Panel):
             col = layout.column(align=True)
             
             col.label(text='Bone Parameters:')
-            col.prop(active_bone, 'sb_bone_spring', text="Spring")        
-            col.prop(active_bone, 'sb_bone_rot', text="Rotation")
-            col.prop(active_bone, 'sb_stiffness', text="Bouncy")
-            col.prop(active_bone,'sb_damp', text="Speed")
-            col.prop(active_bone,'sb_gravity', text="Gravity")
-            col.prop(active_bone,'sb_global_influence', text="Influence")
-            col.prop(active_bone,'sb_collide', text="Is Colliding")
-            col.label(text="Lock axis when colliding:")
-            col.prop(active_bone, 'sb_lock_axis', text="")
-            col.enabled = not active_bone.sb_bone_collider
+            col.prop(active_bone, 'sb_bone_spring', text="Spring")
+            if active_bone.sb_bone_spring:
+                col.prop(active_bone, 'sb_bone_rot', text="Rotation")
+                col.prop(active_bone, 'sb_stiffness', text="Bouncy")
+                col.prop(active_bone,'sb_damp', text="Speed")
+                col.prop(active_bone,'sb_gravity', text="Gravity")
+                col.prop(active_bone,'sb_global_influence', text="Influence")
+                col.prop(active_bone, 'sb_max_distance', text="Max Distance")
+                col.prop(active_bone,'sb_collide', text="Is Colliding")
+                col.prop(active_bone, 'sb_include_only', text="Include Only")
+                col.prop(active_bone, 'sb_colliding_dist', text="Colliding Distance")                
+                col.label(text="Lock axis when colliding:")
+                col.prop(active_bone, 'sb_lock_axis', text="")
             
             layout.separator()
-            col = layout.column(align=True)
-            col.prop(active_bone, 'sb_bone_collider', text="Collider")
-            col.prop(active_bone, 'sb_collider_dist', text="Collider Distance")
-            col.prop(active_bone, 'sb_collider_force', text="Collider Force")       
-            col.enabled = not active_bone.sb_bone_spring
-            
+            col = layout.column(align=True)            
+            if not active_bone.sb_bone_spring:
+                col.prop(active_bone, 'sb_bone_collider', text="Collider")
+                if active_bone.sb_bone_collider:
+                    col.prop(active_bone, 'sb_collider_dist', text="Collider Distance")
+                    col.prop(active_bone, 'sb_collider_force', text="Collider Force")       
+                      
             layout.separator()
             layout.prop(scene, "sb_show_colliders")
             col = layout.column(align=True)
@@ -800,7 +724,7 @@ class bones_collec(bpy.types.PropertyGroup):
     sb_bone_collider: bpy.props.BoolProperty(name="Bone collider", default=False)
     sb_bone_colliding: bpy.props.BoolProperty(name="Bone colliding", default=True)
     sb_collider_dist : bpy.props.FloatProperty(name="Bone collider distance", default=0.5)
-    sb_collider_force : bpy.props.FloatProperty(name="Bone collider force", default=1.0)    
+    sb_collider_force : bpy.props.FloatProperty(name="Bone collider force", default=1.0)   
     matrix_offset = Matrix()
     initial_matrix = Matrix()
     
@@ -821,23 +745,25 @@ def register():
     bpy.types.Scene.sb_spring_bones = bpy.props.CollectionProperty(type=bones_collec)  
     bpy.types.Scene.sb_mesh_colliders = bpy.props.CollectionProperty(type=mesh_collec)       
     bpy.types.Scene.sb_global_spring = bpy.props.BoolProperty(name="Enable spring", default = False)#, update=update_global_spring)
-    bpy.types.Scene.sb_global_spring_frame = bpy.props.BoolProperty(name="Enable Spring", description="Enable Spring on frame change only", default = False)
-    bpy.types.Scene.sb_show_colliders = bpy.props.BoolProperty(name="Show Colliders", description="Show active colliders names", default = False)
+    bpy.types.Scene.sb_global_spring_frame = bpy.props.BoolProperty(name="Enable Spring", description="Enable Spring on frame change only", default=False, override = {'LIBRARY_OVERRIDABLE'})
+    bpy.types.Scene.sb_show_colliders = bpy.props.BoolProperty(name="Show Colliders", description="Show active colliders names", default=False, override = {'LIBRARY_OVERRIDABLE'})
     bpy.types.PoseBone.sb_bone_spring = bpy.props.BoolProperty(name="Enabled", default=False, description="Enable spring effect on this bone", override = {'LIBRARY_OVERRIDABLE'})
     bpy.types.PoseBone.sb_bone_collider = bpy.props.BoolProperty(name="Collider", default=False, description="Enable this bone as collider", override = {'LIBRARY_OVERRIDABLE'})
     bpy.types.PoseBone.sb_collider_dist = bpy.props.FloatProperty(name="Collider Distance", default=0.5, description="Minimum distance to handle collision between the spring and collider bones", override = {'LIBRARY_OVERRIDABLE'})
+    bpy.types.PoseBone.sb_max_distance = bpy.props.FloatProperty(name="Max Distance", default=0.0, description="Maximum distance from the bone origin.\nInfinite if 0", override = {'LIBRARY_OVERRIDABLE'})
+    bpy.types.PoseBone.sb_colliding_dist = bpy.props.FloatProperty(name="Colliding Distance", default=0.0, description="Minimum distance to handle collision between the spring and collider bones", override = {'LIBRARY_OVERRIDABLE'})
     bpy.types.PoseBone.sb_collider_force = bpy.props.FloatProperty(name="Collider Force", default=1.0, description="Amount of repulsion force when colliding", override = {'LIBRARY_OVERRIDABLE'})
     bpy.types.PoseBone.sb_stiffness = bpy.props.FloatProperty(name="Stiffness", default=0.5, min = 0.01, max = 1.0, description="Bouncy/elasticity value, higher values lead to more bounciness", override = {'LIBRARY_OVERRIDABLE'})
-    bpy.types.PoseBone.sb_damp = bpy.props.FloatProperty(name="Damp", default=0.7, min=0.0, max = 10.0, description="Speed/damping force applied to the bone to go back to it initial position", override = {'LIBRARY_OVERRIDABLE'}) 
-    bpy.types.PoseBone.sb_gravity = bpy.props.FloatProperty(name="Gravity", description="Additional vertical force to simulate gravity", default=0.0, min=-100.0, max = 100.0, override = {'LIBRARY_OVERRIDABLE'}) 
+    bpy.types.PoseBone.sb_damp = bpy.props.FloatProperty(name="Damp", default=0.7, min=0.0, max = 10.0, description="Speed/damping force applied to the bone to go back to it initial position", override = {'LIBRARY_OVERRIDABLE'})
+    bpy.types.PoseBone.sb_gravity = bpy.props.FloatProperty(name="Gravity", description="Additional vertical force to simulate gravity", default=0.0, min=-100.0, max = 100.0, override = {'LIBRARY_OVERRIDABLE'})
     bpy.types.PoseBone.sb_bone_rot = bpy.props.BoolProperty(name="Rotation", default=False, description="The spring effect will apply on the bone rotation instead of location", override = {'LIBRARY_OVERRIDABLE'})
     bpy.types.PoseBone.sb_lock_axis = bpy.props.EnumProperty(items=(('NONE', 'None', ""), ('+X', '+X', ''), ('-X', '-X', ''), ('+Y', "+Y", ""), ('-Y', '-Y', ""), ('+Z', '+Z', ""), ('-Z', '-Z', '')), default="NONE", override = {'LIBRARY_OVERRIDABLE'})
-    bpy.types.Object.sb_object_collider = bpy.props.BoolProperty(name="Collider", default=False, description="Enable this bone as collider")
-    bpy.types.Object.sb_collider_dist = bpy.props.FloatProperty(name="Collider Distance", default=0.5, description="Minimum distance to handle collision between the spring and collider bones")
-    bpy.types.Object.sb_collider_force = bpy.props.FloatProperty(name="Collider Force", default=1.0, description="Amount of repulsion force when colliding")
-    bpy.types.PoseBone.sb_collide = bpy.props.BoolProperty(name="Colliding", default = True, description="The bone will collide with other colliders", override = {'LIBRARY_OVERRIDABLE'})#, update=update_global_spring)
-    bpy.types.PoseBone.sb_global_influence = bpy.props.FloatProperty(name="Influence", default = 1.0, min=0.0, max=1.0, description="Global influence of spring motion", override = {'LIBRARY_OVERRIDABLE'})#, update=update_global_spring)
-    
+    bpy.types.Object.sb_object_collider = bpy.props.BoolProperty(name="Collider", default=False, description="Enable this bone as collider", override = {'LIBRARY_OVERRIDABLE'})
+    bpy.types.Object.sb_collider_dist = bpy.props.FloatProperty(name="Collider Distance", default=0.5, description="Minimum distance to handle collision between the spring and collider bones", override = {'LIBRARY_OVERRIDABLE'})
+    bpy.types.Object.sb_collider_force = bpy.props.FloatProperty(name="Collider Force", default=1.0, description="Amount of repulsion force when colliding", override = {'LIBRARY_OVERRIDABLE'})
+    bpy.types.PoseBone.sb_collide = bpy.props.BoolProperty(name="Colliding", default = True, description="The bone will collide with other colliders", override = {'LIBRARY_OVERRIDABLE'})
+    bpy.types.PoseBone.sb_global_influence = bpy.props.FloatProperty(name="Influence", default = 1.0, min=0.0, max=1.0, description="Global influence of spring motion", override = {'LIBRARY_OVERRIDABLE'})
+    bpy.types.PoseBone.sb_include_only = bpy.props.StringProperty(name="Include only for collision", default="*", override = {'LIBRARY_OVERRIDABLE'})
     
 def unregister():
     from bpy.utils import unregister_class
@@ -854,7 +780,9 @@ def unregister():
     del bpy.types.Scene.sb_show_colliders
     del bpy.types.PoseBone.sb_bone_spring
     del bpy.types.PoseBone.sb_bone_collider
+    del bpy.types.PoseBone.sb_max_distance
     del bpy.types.PoseBone.sb_collider_dist
+    del bpy.types.PoseBone.sb_colliding_dist
     del bpy.types.PoseBone.sb_collider_force
     del bpy.types.PoseBone.sb_stiffness
     del bpy.types.PoseBone.sb_damp
@@ -862,12 +790,11 @@ def unregister():
     del bpy.types.PoseBone.sb_bone_rot
     del bpy.types.PoseBone.sb_lock_axis
     del bpy.types.Object.sb_object_collider
-    del bpy.types.Object.sb_collider_dist
+    del bpy.types.Object.sb_collider_dist    
     del bpy.types.Object.sb_collider_force
     del bpy.types.PoseBone.sb_collide
     del bpy.types.PoseBone.sb_global_influence
-    
+    del bpy.types.PoseBone.sb_include_only
     
 if __name__ == "__main__":
-    register()
-    
+    register()   
